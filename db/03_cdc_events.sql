@@ -17,10 +17,8 @@ SET default_with_oids = false;
 
 DROP TABLE IF EXISTS cdc_events;
 DROP FUNCTION IF EXISTS fn_insert_order_event;
--- DROP TRIGGER IF EXISTS orders_triggered;
--- DROP TRIGGER IF EXISTS order_details_triggered;
 DROP PROCEDURE IF EXISTS usp_init_order_events;
--- DROP PUBLICATION IF EXISTS cdc_publication;
+DROP PUBLICATION IF EXISTS cdc_publication;
 
 --
 -- Name: cdc_events; Type: TABLE; 
@@ -28,6 +26,7 @@ DROP PROCEDURE IF EXISTS usp_init_order_events;
 
 CREATE TABLE cdc_events(
     order_id        SMALLINT NOT NULL PRIMARY KEY,
+    customer_id     BPCHAR NOT NULL,
     order_date      DATE,
     required_date   DATE,
     shipped_date    DATE,
@@ -92,6 +91,7 @@ BEGIN
         )
             INSERT INTO cdc_events
                 SELECT o.order_id,
+                      o.customer_id,
                       o.order_date,
                       o.required_date,
                       o.shipped_date,
@@ -119,6 +119,7 @@ BEGIN
             ON CONFLICT (order_id)
             DO UPDATE
                 SET order_id        = excluded.order_id,
+                    customer_id     = excluded.customer_id,
                     order_date      = excluded.order_date,
                     required_date   = excluded.required_date,
                     shipped_date    = excluded.shipped_date,
@@ -201,6 +202,7 @@ BEGIN
   )
       INSERT INTO cdc_events
           SELECT o.order_id,
+                o.customer_id,
                 o.order_date,
                 o.required_date,
                 o.shipped_date,
