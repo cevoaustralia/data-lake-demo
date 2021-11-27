@@ -111,7 +111,7 @@ BEGIN
                       ) AS shipment,
                       now()
                 FROM orders o 
-                JOIN order_items oi ON o.order_id = oi.order_id
+                LEFT JOIN order_items oi ON o.order_id = oi.order_id
                 JOIN customers c ON o.customer_id = c.customer_id 
                 JOIN emp_details ed ON o.employee_id = ed.employee_id
                 JOIN shippers s ON o.ship_via = s.shipper_id 
@@ -139,17 +139,17 @@ $$;
 --
 
 CREATE TRIGGER orders_triggered
-  AFTER INSERT OR UPDATE OR DELETE
+  AFTER INSERT OR UPDATE
   ON orders
   FOR EACH ROW
   EXECUTE PROCEDURE fn_insert_order_event();
 
 --
--- Name: orders_triggered; Type: TRIGGER; 
+-- Name: order_details_triggered; Type: TRIGGER; 
 --
 
 CREATE TRIGGER order_details_triggered
-  AFTER INSERT OR UPDATE OR DELETE
+  AFTER INSERT OR UPDATE
   ON order_details
   FOR EACH ROW
   EXECUTE PROCEDURE fn_insert_order_event();
