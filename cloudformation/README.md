@@ -1,3 +1,10 @@
-## Template source
+## Cloudformation templates
 
-[Infrastructure templates](./infra) are from [Free Templates for AWS CloudFormation](https://templates.cloudonaut.io/en/stable/).
+Templates from [Free Templates for AWS CloudFormation](https://templates.cloudonaut.io/en/stable/).
+
+- [VPC](https://templates.cloudonaut.io/en/stable/vpc/)
+  - VPC, NAT Gateway/Instance etc
+- [State](https://templates.cloudonaut.io/en/stable/state/)
+  - Databases
+- [Custom](./custom)
+  - MSK and EMR
