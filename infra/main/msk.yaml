@@ -43,6 +43,10 @@ Parameters:
     Description: "The number of broker nodes"
     Type: Number
     Default: "2"
+  EbsVolumeSize:
+    Description: "Storage volume size of MSK broker nodes"
+    Type: Number
+    Default: "20"
   ConfigArn:
     Description: "MSK cluster configuration ARN"
     Type: String
@@ -124,6 +128,9 @@ Resources:
             ",",
             { "Fn::ImportValue": !Sub "${ParentVPCStack}-SubnetsPrivate" },
           ]
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: !Ref EbsVolumeSize
   MSKConnectRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -185,3 +192,22 @@ Resources:
                 Resource:
                   - "arn:aws:s3:::${LandingS3BucketName}"
                   - "arn:aws:s3:::${LandingS3BucketName}/*"
+Outputs:
+  StackName:
+    Description: "Stack name"
+    Value: !Sub "${AWS::StackName}"
+  MSKClusterLogGroupName:
+    Description: "MSK cluster log group name"
+    Value: !Ref MSKClusterLogGroup
+  MSKConnectLogGroupName:
+    Description: "MSK connect log group name"
+    Value: !Ref MSKConnectLogGroup
+  MSKClusterArn:
+    Description: "MSK cluster ARN"
+    Value: !Ref MSKCluster
+  MSKConnectRoleName:
+    Description: "MSK connect role name"
+    Value: !Ref MSKConnectRole
+  ClusterSecurityGroupId:
+    Description: "Cluster security group id"
+    Value: !GetAtt ClusterSecurityGroup.GroupId
