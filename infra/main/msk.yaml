@@ -1,0 +1,213 @@
+---
+# MSK cluster and related resources
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  ParentVPCStack:
+    Description: "Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template."
+    Type: String
+  ParentVPNBastionStack:
+    Description: "Optional but recommended stack name of parent VPN bastion host/instance stack based on vpc/vpc-vpn-bastion.yaml template."
+    Type: String
+    Default: ""
+  KafkaVersion:
+    Description: "The version of Apache Kafka."
+    Type: String
+    Default: 2.8.1
+    AllowedValues:
+      - 2.8.1
+      - 2.8.0
+      - 2.7.1
+      - 2.7.0
+      - 2.6.2
+      - 2.6.1
+      - 2.6.0
+      - 2.5.1
+      - 2.4.1.1
+      - 2.3.1
+      - 2.2.1
+  InstanceType:
+    Description: "The type of Amazon EC2 instances to use for brokers."
+    Type: String
+    Default: "kafka.m5.large"
+    AllowedValues:
+      - kafka.t3.small
+      - kafka.m5.large
+      - kafka.m5.xlarge
+      - kafka.m5.2xlarge
+      - kafka.m5.4xlarge
+      - kafka.m5.8xlarge
+      - kafka.m5.12xlarge
+      - kafka.m5.16xlarge
+      - kafka.m5.24xlarge
+  NumberOfBrokerNodes:
+    Description: "The number of broker nodes"
+    Type: Number
+    Default: "2"
+  EbsVolumeSize:
+    Description: "Storage volume size of MSK broker nodes"
+    Type: Number
+    Default: "20"
+  ConfigArn:
+    Description: "MSK cluster configuration ARN"
+    Type: String
+  ConfigRevision:
+    Description: "MSK cluster configuration Revision"
+    Type: Number
+    Default: "1"
+  LandingS3BucketName:
+    Description: "S3 landing bucket name"
+    Type: String
+Conditions:
+  HasVPNBastionSecurityGroup: !Not [!Equals [!Ref ParentVPNBastionStack, ""]]
+Resources:
+  ClusterSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Ref "AWS::StackName"
+      VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
+  ClusterSecurityGroupInSelf:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      IpProtocol: "-1"
+      FromPort: "0"
+      ToPort: "0"
+      SourceSecurityGroupId: !Ref ClusterSecurityGroup
+  ClusterSecurityGroupInVPNBastion:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Condition: HasVPNBastionSecurityGroup
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      IpProtocol: tcp
+      FromPort: "9098"
+      ToPort: "9098"
+      SourceSecurityGroupId:
+        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
+  ClusterSecurityGroupOutAll:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      IpProtocol: "-1"
+      FromPort: "0"
+      ToPort: "0"
+      CidrIp: "0.0.0.0/0"
+  MSKClusterLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/msk/cluster
+      RetentionInDays: 7
+  MSKConnectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/msk/connect
+      RetentionInDays: 7
+  MSKCluster:
+    Type: AWS::MSK::Cluster
+    Properties:
+      ClusterName: !Sub "cluster-${AWS::StackName}"
+      KafkaVersion: !Ref KafkaVersion
+      ClientAuthentication:
+        Sasl:
+          Iam:
+            Enabled: true
+      ConfigurationInfo:
+        Arn: !Ref ConfigArn
+        Revision: !Ref ConfigRevision
+      LoggingInfo:
+        BrokerLogs:
+          CloudWatchLogs:
+            Enabled: true
+            LogGroup: !Ref MSKClusterLogGroup
+      NumberOfBrokerNodes: !Ref NumberOfBrokerNodes
+      BrokerNodeGroupInfo:
+        InstanceType: !Ref InstanceType
+        SecurityGroups:
+          - !GetAtt ClusterSecurityGroup.GroupId
+        ClientSubnets:
+          !Split [
+            ",",
+            { "Fn::ImportValue": !Sub "${ParentVPCStack}-SubnetsPrivate" },
+          ]
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: !Ref EbsVolumeSize
+  MSKConnectRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "kafkaconnect.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !GetAtt MSKConnectLogGroup.Arn
+        - PolicyName: cluster
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "kafka-cluster:Connect"
+                  - "kafka-cluster:AlterCluster"
+                  - "kafka-cluster:DescribeCluster"
+                Resource: !Ref MSKCluster
+        - PolicyName: topics
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "kafka-cluster:*Topic*"
+                  - "kafka-cluster:WriteData"
+                  - "kafka-cluster:ReadData"
+                Resource: !Sub "arn:aws:kafka:${AWS::Region}:${AWS::AccountId}:topic/cluster-${AWS::StackName}/*"
+        - PolicyName: groups
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "kafka-cluster:AlterGroup"
+                  - "kafka-cluster:DescribeGroup"
+                Resource: !Sub "arn:aws:kafka:${AWS::Region}:${AWS::AccountId}:group/cluster-${AWS::StackName}/*"
+        - PolicyName: landing-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:ListBucket"
+                  - "s3:*Object"
+                Resource:
+                  - "arn:aws:s3:::${LandingS3BucketName}"
+                  - "arn:aws:s3:::${LandingS3BucketName}/*"
+Outputs:
+  StackName:
+    Description: "Stack name"
+    Value: !Sub "${AWS::StackName}"
+  MSKClusterLogGroupName:
+    Description: "MSK cluster log group name"
+    Value: !Ref MSKClusterLogGroup
+  MSKConnectLogGroupName:
+    Description: "MSK connect log group name"
+    Value: !Ref MSKConnectLogGroup
+  MSKClusterArn:
+    Description: "MSK cluster ARN"
+    Value: !Ref MSKCluster
+  MSKConnectRoleName:
+    Description: "MSK connect role name"
+    Value: !Ref MSKConnectRole
+  ClusterSecurityGroupId:
+    Description: "Cluster security group id"
+    Value: !GetAtt ClusterSecurityGroup.GroupId
