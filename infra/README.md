@@ -6,5 +6,5 @@ Templates from [Free Templates for AWS CloudFormation](https://templates.cloudon
   - VPC, NAT Gateway/Instance etc
 - [State](https://templates.cloudonaut.io/en/stable/state/)
   - Databases
-- [Custom](./custom)
+- [Main](./main)
   - MSK and EMR
