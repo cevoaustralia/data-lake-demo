@@ -190,8 +190,8 @@ Resources:
                   - "s3:ListBucket"
                   - "s3:*Object"
                 Resource:
-                  - "arn:aws:s3:::${LandingS3BucketName}"
-                  - "arn:aws:s3:::${LandingS3BucketName}/*"
+                  - !Sub "arn:aws:s3:::${LandingS3BucketName}"
+                  - !Sub "arn:aws:s3:::${LandingS3BucketName}/*"
 Outputs:
   StackName:
     Description: "Stack name"

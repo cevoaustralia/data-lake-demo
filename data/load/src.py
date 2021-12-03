@@ -29,7 +29,9 @@ def create_northwind_db():
         global conn
         with conn:
             with conn.cursor() as curs:
-                curs.execute(set_script_path("00_create_schema.sql").open("r").read())
+                curs.execute("CREATE SCHEMA datalake;")
+                curs.execute("SET search_path TO datalake;")
+                curs.execute("ALTER database devdb SET search_path TO datalake;")
                 curs.execute(set_script_path("01_northwind_ddl.sql").open("r").read())
                 curs.execute(set_script_path("02_northwind_data.sql").open("r").read())
                 curs.execute(set_script_path("03_cdc_events.sql").open("r").read())
