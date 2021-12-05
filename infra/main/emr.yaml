@@ -1,0 +1,262 @@
+---
+# EMR cluster and related resources
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  ParentVPCStack:
+    Description: "Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template."
+    Type: String
+  ParentVPNBastionStack:
+    Description: "Optional but recommended stack name of parent VPN bastion host/instance stack based on vpc/vpc-vpn-bastion.yaml template."
+    Type: String
+    Default: ""
+Conditions:
+  HasVPNBastionSecurityGroup: !Not [!Equals [!Ref ParentVPNBastionStack, ""]]
+Resources:
+  ServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "elasticmapreduce.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole
+      Path: "/"
+  Ec2InstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforEC2Role
+  Ec2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Roles:
+        - !Ref Ec2InstanceRole
+      Path: "/"
+  AutoScalingRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "application-autoscaling.amazonaws.com"
+                - "elasticmapreduce.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforAutoScalingRole
+  MasterSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName}-master"
+      VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
+  SlaveSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName}-slave"
+      VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
+  ServiceAccessSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName}-service-access"
+      VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
+  # master ingress/egress
+  MasterSecurityGroupEgressAll:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      IpProtocol: "-1"
+      FromPort: "0"
+      ToPort: "0"
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressTcpCidr:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressTcpMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressTcpSlave:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressTcpServiceAccess:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "8443"
+      ToPort: "8443"
+      SourceSecurityGroupId: !GetAtt ServiceAccessSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressUdpMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "udp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressUdpSlave:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "udp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressIcmpMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "icmp"
+      FromPort: "-1"
+      ToPort: "-1"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressIcmpSlave:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "icmp"
+      FromPort: "-1"
+      ToPort: "-1"
+      SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  MasterSecurityGroupIngressVPNBastion:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Condition: HasVPNBastionSecurityGroup
+    Properties:
+      IpProtocol: tcp
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId:
+        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
+      GroupId: !GetAtt MasterSecurityGroup.GroupId
+  # slave ingress/egress
+  SlaveSecurityGroupEgressAll:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      IpProtocol: "-1"
+      FromPort: "0"
+      ToPort: "0"
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressTcpMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressTcpSlave:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressTcpServiceAccess:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "8443"
+      ToPort: "8443"
+      SourceSecurityGroupId: !GetAtt ServiceAccessSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressUdpMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "udp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressUdpSlave:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "udp"
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressIcmpMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "icmp"
+      FromPort: "-1"
+      ToPort: "-1"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressIcmpSlave:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "icmp"
+      FromPort: "-1"
+      ToPort: "-1"
+      SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  SlaveSecurityGroupIngressVPNBastion:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Condition: HasVPNBastionSecurityGroup
+    Properties:
+      IpProtocol: tcp
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId:
+        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
+      GroupId: !GetAtt SlaveSecurityGroup.GroupId
+  # service access ingress/egress
+  ServiceAccessSecurityGroupIngressMaster:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "9443"
+      ToPort: "9443"
+      SourceSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt ServiceAccessSecurityGroup.GroupId
+  SlaveSecurityGroupEgressMaster:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "8443"
+      ToPort: "8443"
+      DestinationSecurityGroupId: !GetAtt MasterSecurityGroup.GroupId
+      GroupId: !GetAtt ServiceAccessSecurityGroup.GroupId
+  SlaveSecurityGroupEgressSlave:
+    Type: "AWS::EC2::SecurityGroupEgress"
+    Properties:
+      IpProtocol: "tcp"
+      FromPort: "8443"
+      ToPort: "8443"
+      DestinationSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
+      GroupId: !GetAtt ServiceAccessSecurityGroup.GroupId
