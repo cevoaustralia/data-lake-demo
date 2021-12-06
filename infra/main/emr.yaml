@@ -5,13 +5,46 @@ Parameters:
   ParentVPCStack:
     Description: "Stack name of parent VPC stack based on vpc/vpc-*azs.yaml template."
     Type: String
+  LogS3BucketName:
+    Description: "S3 log bucket name"
+    Type: String
   ParentVPNBastionStack:
     Description: "Optional but recommended stack name of parent VPN bastion host/instance stack based on vpc/vpc-vpn-bastion.yaml template."
     Type: String
     Default: ""
+  KeyName:
+    Description: "Optional key pair of the ec2-user to establish a SSH connection to SoftEther VPN."
+    Type: String
+    Default: ""
+  ReleaseLabel:
+    Description: "The Amazon EMR release label."
+    Type: String
+    Default: "emr-6.4.0"
+  MasterInstanceType:
+    Description: "The instance type to be used for the master instance."
+    Type: String
+    Default: m4.large
+  CoreInstanceType:
+    Description: "The instance type to be used for core instances."
+    Type: String
+    Default: m4.large
+  NumberOfCoreInstances:
+    Description: "The number of core instances."
+    Type: Number
+    Default: 2
+  EbsRootVolumeSize:
+    Description: "The size, in GiB, of the Amazon EBS root device volume of the Linux AMI."
+    Type: Number
+    Default: 32
+  StepConcurrencyLevel:
+    Description: "The number of steps that can be executed concurrently."
+    Type: Number
+    Default: 5
 Conditions:
   HasVPNBastionSecurityGroup: !Not [!Equals [!Ref ParentVPNBastionStack, ""]]
+  HasKeyName: !Not [!Equals [!Ref KeyName, ""]]
 Resources:
+  # iam resources
   ServiceRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -26,7 +59,6 @@ Resources:
               - "sts:AssumeRole"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceRole
-      Path: "/"
   Ec2InstanceRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -46,7 +78,6 @@ Resources:
     Properties:
       Roles:
         - !Ref Ec2InstanceRole
-      Path: "/"
   AutoScalingRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -62,6 +93,7 @@ Resources:
               - "sts:AssumeRole"
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonElasticMapReduceforAutoScalingRole
+  # security groups
   MasterSecurityGroup:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
@@ -76,6 +108,16 @@ Resources:
     Type: "AWS::EC2::SecurityGroup"
     Properties:
       GroupDescription: !Sub "${AWS::StackName}-service-access"
+      VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
+  AdditionalMasterSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName}-additional-master"
+      VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
+  AdditionalSlaveSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName}-additional-slave"
       VpcId: { "Fn::ImportValue": !Sub "${ParentVPCStack}-VPC" }
   # master ingress/egress
   MasterSecurityGroupEgressAll:
@@ -150,16 +192,6 @@ Resources:
       ToPort: "-1"
       SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
       GroupId: !GetAtt MasterSecurityGroup.GroupId
-  MasterSecurityGroupIngressVPNBastion:
-    Type: "AWS::EC2::SecurityGroupIngress"
-    Condition: HasVPNBastionSecurityGroup
-    Properties:
-      IpProtocol: tcp
-      FromPort: "0"
-      ToPort: "65535"
-      SourceSecurityGroupId:
-        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
-      GroupId: !GetAtt MasterSecurityGroup.GroupId
   # slave ingress/egress
   SlaveSecurityGroupEgressAll:
     Type: "AWS::EC2::SecurityGroupEgress"
@@ -225,16 +257,6 @@ Resources:
       ToPort: "-1"
       SourceSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
       GroupId: !GetAtt SlaveSecurityGroup.GroupId
-  SlaveSecurityGroupIngressVPNBastion:
-    Type: "AWS::EC2::SecurityGroupIngress"
-    Condition: HasVPNBastionSecurityGroup
-    Properties:
-      IpProtocol: tcp
-      FromPort: "0"
-      ToPort: "65535"
-      SourceSecurityGroupId:
-        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
-      GroupId: !GetAtt SlaveSecurityGroup.GroupId
   # service access ingress/egress
   ServiceAccessSecurityGroupIngressMaster:
     Type: "AWS::EC2::SecurityGroupIngress"
@@ -260,3 +282,79 @@ Resources:
       ToPort: "8443"
       DestinationSecurityGroupId: !GetAtt SlaveSecurityGroup.GroupId
       GroupId: !GetAtt ServiceAccessSecurityGroup.GroupId
+  # additional ingress
+  AdditionalMasterSecurityGroupIngressBastion:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Condition: HasVPNBastionSecurityGroup
+    Properties:
+      IpProtocol: tcp
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId:
+        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
+      GroupId: !GetAtt AdditionalMasterSecurityGroup.GroupId
+  AdditionalSlaveSecurityGroupIngressBastion:
+    Type: "AWS::EC2::SecurityGroupIngress"
+    Condition: HasVPNBastionSecurityGroup
+    Properties:
+      IpProtocol: tcp
+      FromPort: "0"
+      ToPort: "65535"
+      SourceSecurityGroupId:
+        { "Fn::ImportValue": !Sub "${ParentVPNBastionStack}-SecurityGroup" }
+      GroupId: !GetAtt AdditionalSlaveSecurityGroup.GroupId
+  # emr cluster
+  EMRCluster:
+    Type: "AWS::EMR::Cluster"
+    Properties:
+      Name: !Sub "cluster-${AWS::StackName}"
+      ReleaseLabel: !Ref ReleaseLabel
+      Applications:
+        - Name: Hadoop
+        - Name: Hive
+        - Name: Presto
+        - Name: Hue
+        - Name: Spark
+        - Name: Livy
+      AutoScalingRole: !Ref AutoScalingRole
+      Configurations:
+        - Classification: hive-site
+          ConfigurationProperties:
+            hive.metastore.client.factory.class: "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory"
+        - Classification: spark-hive-site
+          ConfigurationProperties:
+            hive.metastore.client.factory.class: "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory"
+      EbsRootVolumeSize: !Ref EbsRootVolumeSize
+      Instances:
+        Ec2KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+        Ec2SubnetId:
+          !Select [
+            0,
+            !Split [
+              ",",
+              { "Fn::ImportValue": !Sub "${ParentVPCStack}-SubnetsPrivate" },
+            ],
+          ]
+        EmrManagedMasterSecurityGroup: !Ref MasterSecurityGroup
+        AdditionalMasterSecurityGroups:
+          - !Ref AdditionalMasterSecurityGroup
+        EmrManagedSlaveSecurityGroup: !Ref SlaveSecurityGroup
+        AdditionalSlaveSecurityGroups:
+          - !Ref AdditionalSlaveSecurityGroup
+        ServiceAccessSecurityGroup: !Ref ServiceAccessSecurityGroup
+        MasterInstanceGroup:
+          InstanceCount: 1
+          InstanceType: !Ref MasterInstanceType
+          Market: ON_DEMAND
+          Name: Master
+        CoreInstanceGroup:
+          InstanceCount: !Ref NumberOfCoreInstances
+          InstanceType: !Ref CoreInstanceType
+          Market: ON_DEMAND
+          Name: Core
+        TerminationProtected: true
+      JobFlowRole: !Ref Ec2InstanceProfile
+      LogUri: !Sub "s3n://"${LogS3BucketName}/elasticmapreduce/"
+      ServiceRole: !Ref ServiceRole
+      StepConcurrencyLevel: !Ref StepConcurrencyLevel
+      VisibleToAllUsers: true
