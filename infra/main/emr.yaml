@@ -40,6 +40,10 @@ Parameters:
     Description: "The number of steps that can be executed concurrently."
     Type: Number
     Default: 5
+  GlueDatabaseName:
+    Description: "The number of the Glue database"
+    Type: String
+    Default: datalake
 Conditions:
   HasVPNBastionSecurityGroup: !Not [!Equals [!Ref ParentVPNBastionStack, ""]]
   HasKeyName: !Not [!Equals [!Ref KeyName, ""]]
@@ -354,7 +358,13 @@ Resources:
           Name: Core
         TerminationProtected: true
       JobFlowRole: !Ref Ec2InstanceProfile
-      LogUri: !Sub "s3n://"${LogS3BucketName}/elasticmapreduce/"
+      LogUri: !Sub "s3n://${LogS3BucketName}/elasticmapreduce/"
       ServiceRole: !Ref ServiceRole
       StepConcurrencyLevel: !Ref StepConcurrencyLevel
       VisibleToAllUsers: true
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref GlueDatabaseName
