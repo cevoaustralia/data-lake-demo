@@ -38,3 +38,14 @@ spark-submit --jars /usr/lib/spark/external/lib/spark-avro.jar,/usr/lib/hudi/hud
     --min-sync-interval-seconds 5 \
     --continuous \
     --op UPSERT
+
+aws emr add-steps \
+  --cluster-id j-31A980N14RJY9 \
+  --steps file://hudi/steps/cdc-events-simple.json \
+  --region ap-southeast-2
+
+# {
+#     "StepIds": [
+#         "s-1590JCHMD8JJ1"
+#     ]
+# }
