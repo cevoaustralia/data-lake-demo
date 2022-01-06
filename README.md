@@ -4,7 +4,7 @@ Data lake demo using change data capture (CDC) on AWS.
 
 - [Part 1 Database and Local Development](https://cevo.com.au/post/data-lake-demo-using-cdc-part-1/)
 - [Part 2 CDC with Amazon MSK](https://cevo.com.au/post/data-lake-demo-using-cdc-part-2/)
-- Part 3 Hudi Table and Dashboard Creation
+- [Part 3 Hudi Table and Dashboard Creation](https://cevo.com.au/post/data-lake-demo-using-cdc-part-3/)
 
 ## Architecture
 
