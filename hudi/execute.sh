@@ -1,3 +1,5 @@
+
+## all
 spark-submit --jars /usr/lib/spark/external/lib/spark-avro.jar,/usr/lib/hudi/hudi-utilities-bundle.jar \
     --master yarn \
     --deploy-mode cluster \
@@ -8,9 +10,9 @@ spark-submit --jars /usr/lib/spark/external/lib/spark-avro.jar,/usr/lib/hudi/hud
     --class org.apache.hudi.utilities.deltastreamer.HoodieDeltaStreamer /usr/lib/hudi/hudi-utilities-bundle.jar \
     --table-type COPY_ON_WRITE \
     --source-ordering-field __source_ts_ms \
-    --props "s3://data-lake-demo-cevo/hudi/config/cdc_events_deltastreamer_s3.properties" \
+    --props "s3://brownbag-590312749310-ap-southeast-2/hudi/config/cdc_events_deltastreamer_s3.properties" \
     --source-class org.apache.hudi.utilities.sources.JsonDFSSource \
-    --target-base-path "s3://data-lake-demo-cevo/hudi/cdc-events/" \
+    --target-base-path "s3://brownbag-590312749310-ap-southeast-2/hudi/cdc-events/" \
     --target-table datalake.cdc_events \
     --schemaprovider-class org.apache.hudi.utilities.schema.FilebasedSchemaProvider \
     --enable-sync \
@@ -18,6 +20,9 @@ spark-submit --jars /usr/lib/spark/external/lib/spark-avro.jar,/usr/lib/hudi/hud
     --continuous \
     --op UPSERT
 
+aws emr add-steps --cluster-id j-15NG3G90XH8IC --steps file://./hudi/steps/cdc-events.json
+
+## simple - only 1 customer
 spark-submit --jars /usr/lib/spark/external/lib/spark-avro.jar,/usr/lib/hudi/hudi-utilities-bundle.jar \
     --master yarn \
     --deploy-mode cluster \
