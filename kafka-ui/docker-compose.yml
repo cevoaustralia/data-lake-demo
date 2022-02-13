@@ -9,6 +9,7 @@ services:
     volumes:
       - $HOME/.aws:/root/.aws
     environment:
+      AWS_PROFILE: brownbag
       KAFKA_CLUSTERS_0_NAME: msk
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: $BS_SERVERS
       KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: "SASL_SSL"
